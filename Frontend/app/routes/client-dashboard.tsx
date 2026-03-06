@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "~/hooks/useAuth";
+
+const InteractiveMap = lazy(() => import("~/components/InteractiveMap"));
 
 // ── SVG World Map (simplified continents as decorative paths) ──────────────
 function WorldMapSVG() {
@@ -172,6 +174,7 @@ export default function ClientDashboard() {
   const navigate = useNavigate();
   const [time, setTime] = useState(new Date());
   const [pulse, setPulse] = useState(false);
+  const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) navigate("/auth");
@@ -284,7 +287,7 @@ export default function ClientDashboard() {
 
           {/* CTA buttons */}
           <div className="flex flex-wrap gap-3 justify-center mt-8">
-            <button className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/40 hover:border-green-400 text-green-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-green-900/40">
+            <button onClick={() => setShowMap(true)} className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/40 hover:border-green-400 text-green-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-green-900/40">
               <span>🗺️</span> Hartă Interactivă
             </button>
             <button className="flex items-center gap-2 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/40 hover:border-teal-400 text-teal-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-teal-900/40">
@@ -427,6 +430,17 @@ export default function ClientDashboard() {
           Proiecție: Mercator · Datum: WGS84 · Scară: 1:50 000 000
         </p>
       </footer>
+
+      {/* ── Interactive Map Modal ── */}
+      {showMap && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+            <div className="text-green-400 font-mono text-sm animate-pulse">Se încarcă harta...</div>
+          </div>
+        }>
+          <InteractiveMap onClose={() => setShowMap(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }
