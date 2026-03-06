@@ -3,11 +3,59 @@ import "leaflet/dist/leaflet.css";
 
 interface InteractiveMapProps {
   onClose: () => void;
+  flyTo?: { lat: number; lon: number; name: string };
 }
 
-export default function InteractiveMap({ onClose }: InteractiveMapProps) {
+// ── Helper – creates the search result marker ─────────────────────────────
+function placeSearchMarker(L: any, map: any, target: { lat: number; lon: number; name: string }) {
+  const icon = L.divIcon({
+    className: "",
+    html: `<div style="
+      width:14px;height:14px;
+      background:#4ade80;
+      border:2px solid #86efac;
+      border-radius:50%;
+      box-shadow:0 0 8px #4ade80, 0 0 18px #4ade8066;
+    "></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -12],
+  });
+
+  const shortName = target.name.split(",").slice(0, 2).join(",").trim();
+
+  return L.marker([target.lat, target.lon], { icon })
+    .addTo(map)
+    .bindPopup(
+      `<div style="
+        background:#111827;
+        color:#4ade80;
+        border:1px solid #166534;
+        border-radius:8px;
+        padding:10px 14px;
+        font-family:monospace;
+        font-size:12px;
+        min-width:180px;
+      ">
+        <strong style="font-size:14px;color:#86efac;">${shortName}</strong><br/>
+        <span style="color:#6b7280;font-size:11px;">
+          ${target.lat >= 0 ? target.lat.toFixed(4) + "°N" : Math.abs(target.lat).toFixed(4) + "°S"}
+          &nbsp;&middot;&nbsp;
+          ${target.lon >= 0 ? target.lon.toFixed(4) + "°E" : Math.abs(target.lon).toFixed(4) + "°W"}
+        </span>
+      </div>`,
+      { className: "geo-popup", maxWidth: 280 }
+    )
+    .openPopup();
+}
+
+export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const searchMarkerRef = useRef<any>(null);
+
+  const flyToRef = useRef(flyTo);
+  flyToRef.current = flyTo;
 
   useEffect(() => {
     // Leaflet must run only on client side
@@ -25,9 +73,11 @@ export default function InteractiveMap({ onClose }: InteractiveMapProps) {
         shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
+      // If we have a flyTo target, start centered on it; otherwise world view
+      const initFlyTo = flyToRef.current;
       const map = L.map(mapContainerRef.current!, {
-        center: [20, 0],
-        zoom: 2,
+        center: initFlyTo ? [initFlyTo.lat, initFlyTo.lon] : [20, 0],
+        zoom: initFlyTo ? 13 : 2,
         minZoom: 2,
         maxZoom: 18,
         zoomControl: true,
@@ -102,6 +152,11 @@ export default function InteractiveMap({ onClose }: InteractiveMapProps) {
           );
       });
 
+      // ── If opened from GeoSearch, place search marker immediately ──
+      if (initFlyTo) {
+        searchMarkerRef.current = placeSearchMarker(L, map, initFlyTo);
+      }
+
       mapInstanceRef.current = map;
     });
 
@@ -121,6 +176,28 @@ export default function InteractiveMap({ onClose }: InteractiveMapProps) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
+
+  // Fly to search result when flyTo prop changes after mount
+  useEffect(() => {
+    if (!flyTo || !mapInstanceRef.current) return;
+
+    import("leaflet").then((L) => {
+      const map = mapInstanceRef.current;
+
+      // Remove previous search marker if any
+      if (searchMarkerRef.current) {
+        searchMarkerRef.current.remove();
+        searchMarkerRef.current = null;
+      }
+
+      map.flyTo([flyTo.lat, flyTo.lon], 13, { duration: 1.5 });
+      // Place marker after fly animation (~1.6s)
+      setTimeout(() => {
+        if (!mapInstanceRef.current) return;
+        searchMarkerRef.current = placeSearchMarker(L, map, flyTo);
+      }, 1600);
+    });
+  }, [flyTo]);
 
   return (
     <>

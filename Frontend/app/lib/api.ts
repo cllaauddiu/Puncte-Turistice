@@ -46,3 +46,42 @@ export const authApi = {
     api.post<AuthResponse>("/auth/register", data).then((r) => r.data),
 };
 
+// ── Users (Admin) ─────────────────────────────────────────────────────────────
+
+export type UserRole = "ADMIN" | "CLIENT";
+
+export interface UserDTO {
+  id: number;
+  username: string;
+  role: UserRole;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+}
+
+export interface UpdateUserRequest {
+  username: string;
+  password?: string;
+}
+
+export interface ChangeRoleRequest {
+  role: UserRole;
+}
+
+export const usersApi = {
+  getAll: () =>
+    api.get<UserDTO[]>("/users").then((r) => r.data),
+  getById: (id: number) =>
+    api.get<UserDTO>(`/users/${id}`).then((r) => r.data),
+  create: (data: CreateUserRequest) =>
+    api.post<UserDTO>("/users", data).then((r) => r.data),
+  update: (id: number, data: UpdateUserRequest) =>
+    api.put<UserDTO>(`/users/${id}`, data).then((r) => r.data),
+  delete: (id: number) =>
+    api.delete(`/users/${id}`).then((r) => r.data),
+  changeRole: (id: number, data: ChangeRoleRequest) =>
+    api.patch<UserDTO>(`/users/${id}/role`, data).then((r) => r.data),
+};
+
