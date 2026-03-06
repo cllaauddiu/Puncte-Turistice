@@ -24,8 +24,13 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<UserDTO> register(@Valid @RequestBody RegisterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(request));
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        userService.createUser(request);
+        // Auto-login după înregistrare — returnează token direct
+        LoginRequest loginRequest = new LoginRequest();
+        loginRequest.setUsername(request.getUsername());
+        loginRequest.setPassword(request.getPassword());
+        return ResponseEntity.status(HttpStatus.CREATED).body(authService.login(loginRequest));
     }
 
     @PostMapping("/login")
