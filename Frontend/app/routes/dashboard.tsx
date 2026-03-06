@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "~/hooks/useAuth";
+import ClientDashboard from "~/routes/client-dashboard";
 
 export default function Dashboard() {
   const { user, logout, isAuthenticated } = useAuth();
@@ -16,6 +17,11 @@ export default function Dashboard() {
   };
 
   if (!user) return null;
+
+  // Route CLIENT users to the geographic atlas dashboard
+  if (user.role === "CLIENT") {
+    return <ClientDashboard />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-950">
