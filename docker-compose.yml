@@ -57,6 +57,22 @@ services:
       - "traefik.http.routers.user-service.entrypoints=web"
       - "traefik.http.services.user-service.loadbalancer.server.port=8081"
 
+  # ── Weather microservice (Spring Boot) ──────────────────────────────────────
+  weather-service:
+    build:
+      context: ./Weather
+      dockerfile: Dockerfile
+    container_name: weather-service
+    environment:
+      VISUAL_CROSSING_API_KEY: ${VISUAL_CROSSING_API_KEY}
+    networks:
+      - licenta-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.weather-service.rule=Host(`localhost`) && PathPrefix(`/weather`)"
+      - "traefik.http.routers.weather-service.entrypoints=web"
+      - "traefik.http.services.weather-service.loadbalancer.server.port=8082"
+
   # ── Frontend (React + Nginx) ─────────────────────────────────────────────────
   frontend:
     build:

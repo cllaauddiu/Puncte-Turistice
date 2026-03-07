@@ -4,6 +4,10 @@ const API_BASE_URL = typeof window !== "undefined"
   ? "/api"
   : (process.env.API_URL ?? "http://user-service:8081");
 
+const WEATHER_BASE_URL = typeof window !== "undefined"
+  ? "/weather"
+  : (process.env.WEATHER_URL ?? "http://weather-service:8082/weather");
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
@@ -85,3 +89,37 @@ export const usersApi = {
     api.patch<UserDTO>(`/users/${id}/role`, data).then((r) => r.data),
 };
 
+// ── Weather ───────────────────────────────────────────────────────────────────
+
+export interface WeatherData {
+  resolvedAddress: string;
+  temperature: number;
+  feelsLike: number;
+  humidity: number;
+  windSpeed: number;
+  windDirection: number;
+  windDirectionLabel: string;
+  uvIndex: number;
+  visibility: number;
+  cloudCover: number;
+  precipProbability: number;
+  pressure: number;
+  dewPoint: number;
+  conditions: string;
+  icon: string;
+  description: string;
+  tempMax: number;
+  tempMin: number;
+  sunrise: string;
+  sunset: string;
+}
+
+const weatherAxios = axios.create({
+  baseURL: WEATHER_BASE_URL,
+  headers: { "Content-Type": "application/json" },
+});
+
+export const weatherApi = {
+  getWeather: (lat: number, lon: number) =>
+    weatherAxios.get<WeatherData>("", { params: { lat, lon } }).then((r) => r.data),
+};

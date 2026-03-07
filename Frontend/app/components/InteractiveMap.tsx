@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
+import { weatherApi, type WeatherData } from "~/lib/api";
 
 interface InteractiveMapProps {
   onClose: () => void;
@@ -14,6 +15,9 @@ interface LocationInfo {
   dateStr: string | null;
   tzName: string | null;
   loading: boolean;
+  weather: WeatherData | null;
+  weatherLoading: boolean;
+  weatherError: string | null;
 }
 
 // ── Helper – creates the search result marker ─────────────────────────────
@@ -188,10 +192,10 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
         clickMarkerRef.current = L.marker([lat, lng], { icon: clickIcon }).addTo(map);
 
         // Show panel in loading state immediately
-        setLocationInfo({ lat, lng, locationName: null, timeStr: null, dateStr: null, tzName: null, loading: true });
+        setLocationInfo({ lat, lng, locationName: null, timeStr: null, dateStr: null, tzName: null, loading: true, weather: null, weatherLoading: true, weatherError: null });
 
-        // Fetch reverse geocode + timezone in parallel
-        const [geoResult, timeResult] = await Promise.allSettled([
+        // Fetch reverse geocode + timezone + weather in parallel
+        const [geoResult, timeResult, weatherResult] = await Promise.allSettled([
           fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}&format=json&accept-language=ro`,
             { headers: { "Accept-Language": "ro" } }
@@ -199,6 +203,7 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
           fetch(
             `https://timeapi.io/api/time/current/coordinate?latitude=${lat.toFixed(6)}&longitude=${lng.toFixed(6)}`
           ).then((r) => r.json()),
+          weatherApi.getWeather(lat, lng),
         ]);
 
         // Parse location name from Nominatim
@@ -236,7 +241,16 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
           tzName = `UTC${offsetHours >= 0 ? "+" : ""}${offsetHours} (aproximativ)`;
         }
 
-        setLocationInfo({ lat, lng, locationName, timeStr, dateStr, tzName, loading: false });
+        // Parse weather
+        let weather: WeatherData | null = null;
+        let weatherError: string | null = null;
+        if (weatherResult.status === "fulfilled") {
+          weather = weatherResult.value;
+        } else {
+          weatherError = "Date meteo indisponibile";
+        }
+
+        setLocationInfo({ lat, lng, locationName, timeStr, dateStr, tzName, loading: false, weather, weatherLoading: false, weatherError });
       });
 
       mapInstanceRef.current = map;
@@ -433,6 +447,50 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
                       </>
                     )}
                   </div>
+
+                  {/* Weather card – temperature + conditions */}
+                  <div className="bg-gray-900/80 border border-blue-900/30 rounded-xl p-4 flex flex-col gap-2">
+                    <div className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">🌤 Vreme actuală</div>
+                    {locationInfo.weatherLoading ? (
+                      <div className="text-gray-500 animate-pulse text-sm">⏳ Se încarcă...</div>
+                    ) : locationInfo.weatherError ? (
+                      <div className="text-red-500 text-xs">{locationInfo.weatherError}</div>
+                    ) : locationInfo.weather ? (
+                      <>
+                        <div className="flex items-end gap-2">
+                          <span className="text-blue-200 text-4xl font-bold">{Math.round(locationInfo.weather.temperature)}°C</span>
+                          <span className="text-gray-400 text-sm pb-1">resimțit {Math.round(locationInfo.weather.feelsLike)}°C</span>
+                        </div>
+                        <div className="text-blue-300 text-sm font-semibold">{locationInfo.weather.conditions}</div>
+                        {locationInfo.weather.description && (
+                          <div className="text-gray-500 text-[11px] leading-snug">{locationInfo.weather.description}</div>
+                        )}
+                        <div className="flex gap-3 text-xs text-gray-400 mt-1">
+                          <span>↑ {Math.round(locationInfo.weather.tempMax)}°</span>
+                          <span>↓ {Math.round(locationInfo.weather.tempMin)}°</span>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+
+                  {/* Weather details card */}
+                  {locationInfo.weather && !locationInfo.weatherLoading && (
+                    <div className="bg-gray-900/80 border border-blue-900/30 rounded-xl p-4 flex flex-col gap-2">
+                      <div className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">📊 Detalii meteo</div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <div><span className="text-gray-500">💧 Umiditate: </span><span className="text-blue-200">{locationInfo.weather.humidity}%</span></div>
+                        <div><span className="text-gray-500">🌬 Vânt: </span><span className="text-blue-200">{Math.round(locationInfo.weather.windSpeed)} km/h {locationInfo.weather.windDirectionLabel}</span></div>
+                        <div><span className="text-gray-500">🌧 Precipitații: </span><span className="text-blue-200">{locationInfo.weather.precipProbability}%</span></div>
+                        <div><span className="text-gray-500">☁️ Nori: </span><span className="text-blue-200">{locationInfo.weather.cloudCover}%</span></div>
+                        <div><span className="text-gray-500">👁 Vizibilitate: </span><span className="text-blue-200">{locationInfo.weather.visibility} km</span></div>
+                        <div><span className="text-gray-500">🌡 Presiune: </span><span className="text-blue-200">{Math.round(locationInfo.weather.pressure)} hPa</span></div>
+                        <div><span className="text-gray-500">☀️ UV: </span><span className="text-blue-200">{locationInfo.weather.uvIndex}</span></div>
+                        <div><span className="text-gray-500">💦 Punct de rouă: </span><span className="text-blue-200">{Math.round(locationInfo.weather.dewPoint)}°C</span></div>
+                        <div><span className="text-gray-500">🌅 Răsărit: </span><span className="text-blue-200">{locationInfo.weather.sunrise?.slice(0, 5)}</span></div>
+                        <div><span className="text-gray-500">🌇 Apus: </span><span className="text-blue-200">{locationInfo.weather.sunset?.slice(0, 5)}</span></div>
+                      </div>
+                    </div>
+                  )}
 
                 </div>
               </div>
