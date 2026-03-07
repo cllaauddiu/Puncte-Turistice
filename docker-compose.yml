@@ -73,6 +73,22 @@ services:
       - "traefik.http.routers.weather-service.entrypoints=web"
       - "traefik.http.services.weather-service.loadbalancer.server.port=8082"
 
+  # ── AI microservice (Spring Boot + Gemini) ──────────────────────────────────
+  ai-service:
+    build:
+      context: ./AIService
+      dockerfile: Dockerfile
+    container_name: ai-service
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    networks:
+      - licenta-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-service.rule=Host(`localhost`) && PathPrefix(`/ai`)"
+      - "traefik.http.routers.ai-service.entrypoints=web"
+      - "traefik.http.services.ai-service.loadbalancer.server.port=8083"
+
   # ── Frontend (React + Nginx) ─────────────────────────────────────────────────
   frontend:
     build:
