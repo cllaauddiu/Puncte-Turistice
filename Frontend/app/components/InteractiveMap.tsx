@@ -1,9 +1,19 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 
 interface InteractiveMapProps {
   onClose: () => void;
   flyTo?: { lat: number; lon: number; name: string };
+}
+
+interface LocationInfo {
+  lat: number;
+  lng: number;
+  locationName: string | null;
+  timeStr: string | null;
+  dateStr: string | null;
+  tzName: string | null;
+  loading: boolean;
 }
 
 // ── Helper – creates the search result marker ─────────────────────────────
@@ -53,19 +63,19 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const searchMarkerRef = useRef<any>(null);
+  const clickMarkerRef = useRef<any>(null);
+
+  const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
 
   const flyToRef = useRef(flyTo);
   flyToRef.current = flyTo;
 
   useEffect(() => {
-    // Leaflet must run only on client side
     if (typeof window === "undefined") return;
     if (!mapContainerRef.current) return;
-    if (mapInstanceRef.current) return; // already initialized
+    if (mapInstanceRef.current) return;
 
-    // Dynamically import leaflet to avoid SSR issues
     import("leaflet").then((L) => {
-      // Fix default marker icon paths broken by bundlers
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -73,7 +83,6 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
         shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      // If we have a flyTo target, start centered on it; otherwise world view
       const initFlyTo = flyToRef.current;
       const map = L.map(mapContainerRef.current!, {
         center: initFlyTo ? [initFlyTo.lat, initFlyTo.lon] : [20, 0],
@@ -84,7 +93,6 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
         attributionControl: true,
       });
 
-      // Dark CartoDB tile layer – matches the atlas theme
       L.tileLayer(
         "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         {
@@ -145,17 +153,91 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
               <strong style="font-size:14px;color:#86efac;">${name}</strong><br/>
               <span style="color:#6b7280;font-size:11px;">${desc}</span>
             </div>`,
-            {
-              className: "geo-popup",
-              maxWidth: 250,
-            }
+            { className: "geo-popup", maxWidth: 250 }
           );
       });
 
-      // ── If opened from GeoSearch, place search marker immediately ──
       if (initFlyTo) {
         searchMarkerRef.current = placeSearchMarker(L, map, initFlyTo);
       }
+
+      // ── Click on map → side panel ───────────────────────────────────
+      const clickIcon = L.divIcon({
+        className: "",
+        html: `<div style="
+          width:12px;height:12px;
+          background:#facc15;
+          border:2px solid #fde68a;
+          border-radius:50%;
+          box-shadow:0 0 8px #facc15, 0 0 18px #facc1566;
+        "></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      });
+
+      map.on("click", async (e: any) => {
+        const { lat, lng } = e.latlng;
+
+        // Remove previous click marker
+        if (clickMarkerRef.current) {
+          clickMarkerRef.current.remove();
+          clickMarkerRef.current = null;
+        }
+
+        // Place marker
+        clickMarkerRef.current = L.marker([lat, lng], { icon: clickIcon }).addTo(map);
+
+        // Show panel in loading state immediately
+        setLocationInfo({ lat, lng, locationName: null, timeStr: null, dateStr: null, tzName: null, loading: true });
+
+        // Fetch reverse geocode + timezone in parallel
+        const [geoResult, timeResult] = await Promise.allSettled([
+          fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}&format=json&accept-language=ro`,
+            { headers: { "Accept-Language": "ro" } }
+          ).then((r) => r.json()),
+          fetch(
+            `https://timeapi.io/api/time/current/coordinate?latitude=${lat.toFixed(6)}&longitude=${lng.toFixed(6)}`
+          ).then((r) => r.json()),
+        ]);
+
+        // Parse location name from Nominatim
+        let locationName: string | null = null;
+        if (geoResult.status === "fulfilled") {
+          const geo = geoResult.value;
+          const addr = geo.address ?? {};
+          const parts = [
+            addr.city || addr.town || addr.village || addr.hamlet || addr.county,
+            addr.state || addr.region,
+            addr.country,
+          ].filter(Boolean);
+          locationName = parts.length > 0 ? parts.join(", ") : (geo.display_name ?? null);
+        }
+
+        // Parse time from timeapi.io
+        let timeStr: string | null = null;
+        let dateStr: string | null = null;
+        let tzName: string | null = null;
+        if (timeResult.status === "fulfilled") {
+          const td = timeResult.value;
+          timeStr = td.time ?? null;
+          dateStr = td.dayOfWeek && td.date ? `${td.dayOfWeek}, ${td.date}` : null;
+          tzName = td.timeZone ?? null;
+        }
+
+        // Fallback for time if API failed
+        if (!timeStr) {
+          const offsetHours = Math.round(lng / 15);
+          const now = new Date();
+          const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+          const localTime = new Date(utcMs + offsetHours * 3600000);
+          timeStr = localTime.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          dateStr = localTime.toLocaleDateString("ro-RO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+          tzName = `UTC${offsetHours >= 0 ? "+" : ""}${offsetHours} (aproximativ)`;
+        }
+
+        setLocationInfo({ lat, lng, locationName, timeStr, dateStr, tzName, loading: false });
+      });
 
       mapInstanceRef.current = map;
     });
@@ -184,14 +266,12 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
     import("leaflet").then((L) => {
       const map = mapInstanceRef.current;
 
-      // Remove previous search marker if any
       if (searchMarkerRef.current) {
         searchMarkerRef.current.remove();
         searchMarkerRef.current = null;
       }
 
       map.flyTo([flyTo.lat, flyTo.lon], 13, { duration: 1.5 });
-      // Place marker after fly animation (~1.6s)
       setTimeout(() => {
         if (!mapInstanceRef.current) return;
         searchMarkerRef.current = placeSearchMarker(L, map, flyTo);
@@ -199,9 +279,19 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
     });
   }, [flyTo]);
 
+  const latLabel = locationInfo
+    ? locationInfo.lat >= 0
+      ? locationInfo.lat.toFixed(6) + "°N"
+      : Math.abs(locationInfo.lat).toFixed(6) + "°S"
+    : "";
+  const lngLabel = locationInfo
+    ? locationInfo.lng >= 0
+      ? locationInfo.lng.toFixed(6) + "°E"
+      : Math.abs(locationInfo.lng).toFixed(6) + "°W"
+    : "";
+
   return (
     <>
-      {/* Popup custom style override */}
       <style>{`
         .geo-popup .leaflet-popup-content-wrapper {
           background: transparent !important;
@@ -209,20 +299,14 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
           box-shadow: none !important;
           padding: 0 !important;
         }
-        .geo-popup .leaflet-popup-content {
-          margin: 0 !important;
-        }
-        .geo-popup .leaflet-popup-tip-container {
-          display: none !important;
-        }
+        .geo-popup .leaflet-popup-content { margin: 0 !important; }
+        .geo-popup .leaflet-popup-tip-container { display: none !important; }
         .leaflet-control-attribution {
           background: rgba(3,7,18,0.8) !important;
           color: #374151 !important;
           font-size: 9px !important;
         }
-        .leaflet-control-attribution a {
-          color: #4b5563 !important;
-        }
+        .leaflet-control-attribution a { color: #4b5563 !important; }
         .leaflet-control-zoom a {
           background: #111827 !important;
           color: #4ade80 !important;
@@ -232,15 +316,18 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
           background: #1f2937 !important;
           color: #86efac !important;
         }
+        @keyframes slideInPanel {
+          from { opacity: 0; transform: translateX(24px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        .location-panel { animation: slideInPanel 0.25s ease; }
       `}</style>
 
       {/* Modal backdrop */}
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
         style={{ background: "rgba(0,0,0,0.85)" }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) onClose();
-        }}
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         {/* Modal container */}
         <div className="relative w-full max-w-6xl h-[85vh] bg-gray-950 rounded-2xl border border-green-900/50 overflow-hidden shadow-2xl shadow-green-950/50 flex flex-col">
@@ -259,11 +346,8 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
               </div>
             </div>
 
-            {/* Coords display */}
             <div className="hidden md:flex items-center gap-6 font-mono text-xs">
-              <span className="text-green-700">
-                Click pe marcatori pentru detalii
-              </span>
+              <span className="text-green-700">Click pe hartă pentru detalii locație</span>
               <span className="text-green-600 border border-green-900/50 rounded px-2 py-1">
                 🌍 15 orașe marcate
               </span>
@@ -278,8 +362,82 @@ export default function InteractiveMap({ onClose, flyTo }: InteractiveMapProps) 
             </button>
           </div>
 
-          {/* Map area */}
-          <div ref={mapContainerRef} className="flex-1 w-full" />
+          {/* Map area + overlay wrapper */}
+          <div className="relative flex-1 overflow-hidden">
+
+            {/* Map area */}
+            <div ref={mapContainerRef} className="absolute inset-0" />
+
+            {/* Full-map info overlay */}
+            {locationInfo && (
+              <div
+                key={`${locationInfo.lat}-${locationInfo.lng}`}
+                className="location-panel absolute inset-0 z-1000 overflow-y-auto"
+                style={{ background: "rgba(3,7,18,0.93)" }}
+              >
+                {/* Overlay header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-yellow-900/40 sticky top-0 z-10"
+                  style={{ background: "rgba(3,7,18,0.97)" }}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-yellow-400 text-lg">📍</span>
+                    <div>
+                      {locationInfo.loading || !locationInfo.locationName ? (
+                        <div className="text-yellow-600 font-mono text-sm animate-pulse">Se identifică locația...</div>
+                      ) : (
+                        <div className="text-yellow-200 font-mono font-bold text-base leading-snug">
+                          {locationInfo.locationName}
+                        </div>
+                      )}
+                      <div className="text-gray-600 font-mono text-[11px] mt-0.5">
+                        {latLabel} &nbsp;·&nbsp; {lngLabel}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setLocationInfo(null);
+                      if (clickMarkerRef.current) {
+                        clickMarkerRef.current.remove();
+                        clickMarkerRef.current = null;
+                      }
+                    }}
+                    className="text-gray-500 hover:text-red-400 transition-colors text-xl font-mono ml-6"
+                    title="Înapoi la hartă"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Overlay content */}
+                <div className="px-6 py-6 font-mono grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                  {/* Coordinates card */}
+                  <div className="bg-gray-900/80 border border-yellow-900/30 rounded-xl p-4 flex flex-col gap-2">
+                    <div className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">Coordonate</div>
+                    <div className="flex flex-col gap-1 text-sm">
+                      <div><span className="text-yellow-600">Lat: </span><span className="text-yellow-100">{latLabel}</span></div>
+                      <div><span className="text-yellow-600">Lon: </span><span className="text-yellow-100">{lngLabel}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Local time card */}
+                  <div className="bg-gray-900/80 border border-yellow-900/30 rounded-xl p-4 flex flex-col gap-2">
+                    <div className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">Ora locală</div>
+                    {locationInfo.loading || !locationInfo.timeStr ? (
+                      <div className="text-gray-500 animate-pulse text-sm">⏳ Se încarcă...</div>
+                    ) : (
+                      <>
+                        <div className="text-yellow-200 text-3xl font-bold tracking-wider">{locationInfo.timeStr}</div>
+                        <div className="text-gray-400 text-xs">{locationInfo.dateStr}</div>
+                        <div className="text-gray-600 text-[10px] mt-1">🌐 {locationInfo.tzName}</div>
+                      </>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Footer bar */}
           <div className="shrink-0 px-5 py-2 border-t border-green-900/30 bg-gray-950/80 flex items-center justify-between font-mono text-xs text-green-900">
