@@ -28,6 +28,7 @@ services:
       POSTGRES_PASSWORD: 1234
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
     networks:
       - licenta-net
     healthcheck:
@@ -88,6 +89,30 @@ services:
       - "traefik.http.routers.ai-service.rule=Host(`localhost`) && PathPrefix(`/ai`)"
       - "traefik.http.routers.ai-service.entrypoints=web"
       - "traefik.http.services.ai-service.loadbalancer.server.port=8083"
+
+  # ── Games microservice (Spring Boot) ────────────────────────────────────────
+  games-service:
+    build:
+      context: ./Games
+      dockerfile: Dockerfile
+    container_name: games-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gamedb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: 1234
+      AI_SERVICE_URL: http://ai-service:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+    networks:
+      - licenta-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.games-service.rule=Host(`localhost`) && PathPrefix(`/games`)"
+      - "traefik.http.routers.games-service.entrypoints=web"
+      - "traefik.http.services.games-service.loadbalancer.server.port=8084"
 
   # ── Frontend (React + Nginx) ─────────────────────────────────────────────────
   frontend:

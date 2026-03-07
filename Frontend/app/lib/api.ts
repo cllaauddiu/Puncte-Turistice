@@ -8,6 +8,10 @@ const WEATHER_BASE_URL = typeof window !== "undefined"
   ? "/weather"
   : (process.env.WEATHER_URL ?? "http://weather-service:8082/weather");
 
+const GAMES_BASE_URL = typeof window !== "undefined"
+  ? "/games"
+  : (process.env.GAMES_URL ?? "http://games-service:8084");
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
@@ -123,3 +127,75 @@ export const weatherApi = {
   getWeather: (lat: number, lon: number) =>
     weatherAxios.get<WeatherData>("", { params: { lat, lon } }).then((r) => r.data),
 };
+
+// ── Fog of War Game ───────────────────────────────────────────────────────────
+
+export type ZoneStatus = "LOCKED" | "RIDDLE_ACTIVE" | "UNLOCKED";
+
+export interface FogZone {
+  id: number;
+  name: string;
+  continent: string;
+  lat: number;
+  lng: number;
+  bboxSouth: number;
+  bboxWest: number;
+  bboxNorth: number;
+  bboxEast: number;
+  landmarkDescription: string | null;
+  difficulty: number;
+  emoji: string;
+  status: ZoneStatus;
+}
+
+export interface FogRiddle {
+  zoneId: number;
+  zoneName: string;
+  question: string;
+  hint: string;
+  difficulty: number;
+  options: string[]; // ["A: ...", "B: ...", "C: ...", "D: ..."]
+}
+
+export interface FogUnlockResult {
+  success: boolean;
+  message: string;
+  landmarkDescription?: string;
+  zoneName?: string;
+  emoji?: string;
+  zoneId?: number;
+  hint?: string;
+}
+
+export interface FogProgress {
+  totalZones: number;
+  unlockedZones: number;
+  activeRiddles: number;
+  lastUnlockedZone: string | null;
+  score: number;
+}
+
+const gamesAxios = axios.create({
+  baseURL: GAMES_BASE_URL,
+  headers: { "Content-Type": "application/json" },
+});
+
+gamesAxios.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export const fogApi = {
+  getZones: () =>
+    gamesAxios.get<FogZone[]>("/fog/zones").then((r) => r.data),
+  getRiddle: (zoneId: number) =>
+    gamesAxios.get<FogRiddle>(`/fog/zones/${zoneId}/riddle`).then((r) => r.data),
+  submitAnswer: (zoneId: number, answer: string) =>
+    gamesAxios.post<FogUnlockResult>(`/fog/zones/${zoneId}/unlock`, { answer }).then((r) => r.data),
+  getProgress: () =>
+    gamesAxios.get<FogProgress>("/fog/progress").then((r) => r.data),
+};
+

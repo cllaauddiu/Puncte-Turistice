@@ -4,6 +4,7 @@ import { useAuth } from "~/hooks/useAuth";
 
 const InteractiveMap = lazy(() => import("~/components/InteractiveMap"));
 const GeoSearch = lazy(() => import("~/components/GeoSearch"));
+const FogOfWar = lazy(() => import("~/components/FogOfWar"));
 
 // ── SVG World Map (simplified continents as decorative paths) ──────────────
 function WorldMapSVG() {
@@ -177,6 +178,7 @@ export default function ClientDashboard() {
   const [pulse, setPulse] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showFog, setShowFog] = useState(false);
   const [mapFlyTo, setMapFlyTo] = useState<{ lat: number; lon: number; name: string } | null>(null);
 
   useEffect(() => {
@@ -293,7 +295,7 @@ export default function ClientDashboard() {
             <button onClick={() => setShowMap(true)} className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/40 hover:border-green-400 text-green-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-green-900/40">
               <span>🗺️</span> Hartă Interactivă
             </button>
-            <button className="flex items-center gap-2 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/40 hover:border-teal-400 text-teal-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-teal-900/40">
+            <button onClick={() => setShowFog(true)} className="flex items-center gap-2 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/40 hover:border-teal-400 text-teal-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-teal-900/40">
               <span>🔭</span> Explorează Regiuni
             </button>
             <button onClick={() => setShowSearch(true)} className="flex items-center gap-2 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700 hover:border-green-600/60 text-gray-300 hover:text-green-300 px-6 py-2.5 rounded-lg font-mono text-sm transition-all duration-300 hover:shadow-lg hover:shadow-green-900/30">
@@ -463,6 +465,20 @@ export default function ClientDashboard() {
               setShowMap(true);
             }}
           />
+        </Suspense>
+      )}
+
+      {/* ── Fog of War Modal ── */}
+      {showFog && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+            <div className="flex flex-col items-center gap-3">
+              <div className="text-4xl animate-pulse">🌍</div>
+              <div className="text-green-400 font-mono text-sm animate-pulse">Se încarcă jocul...</div>
+            </div>
+          </div>
+        }>
+          <FogOfWar onClose={() => setShowFog(false)} />
         </Suspense>
       )}
     </div>
